@@ -1,4 +1,5 @@
 #include <iostream>
+#include <stdio.h>
 #include <cstdlib>
 #include <cuda.h>
 #include <cuda_runtime.h>
@@ -9,9 +10,9 @@ using namespace std;
 #define tile_width 10
 
 
-#define TOTALN 64*8
+#define TOTALN 64*32*1000
 #define THREADS_PerBlock 64
-#define BLOCKS_PerGrid 8
+#define BLOCKS_PerGrid 32
 
 
 static void HandleError( cudaError_t err, const char *file, int line ) {
