@@ -10,7 +10,7 @@ using namespace std;
 #define tile_width 10
 
 
-#define TOTALN 64*32*1000
+#define TOTALN 64*32*100
 #define THREADS_PerBlock 64
 #define BLOCKS_PerGrid 32
 
@@ -56,21 +56,28 @@ int cpu_sum(int *data, int len){
 
 // }
 
-__global__ void gpu_sum(int *d_data, int * result, int len){
-    // int thread_num = ceil(length/tile_width);
-    int sub_result = 0;
+__global__ void gpu_sum(int *c, int *a){
+    __shared__ unsigned int mycache[THREADS_PerBlock];
+    int i = threadIdx.x+blockIdx.x*blockDim.x;
+    int j = gridDim.x*blockDim.x;
+    int cacheN;
+    unsigned sum;
 
-    int bx = blockIdx.x;
-    int tx = threadIdx.x;
-    
-    // sub_result[tx] = 0;
-    // __syncthreads();
-    for (int i = 0; i < tile_width; i++){
-        atomicAdd(&sub_result, d_data[bx*8*tile_width+tx*tile_width+i]);
+    sum=0;
+    cacheN=threadIdx.x; 
+    while(i<TOTALN) {
+        sum += a[i];
+        i = i+j;
     }
+
+    mycache[cacheN]=sum;
     __syncthreads();
 
-    atomicAdd(result, sub_result);
+    c[blockIdx.x] = 0;
+    atomicAdd(&c[blockIdx.x],mycache[threadIdx.x]);
+    __syncthreads();
+
+
 
 }
 
@@ -151,8 +158,8 @@ int main()
 
     /* Launch the GPU kernel */
     cudaEventRecord(start, 0);
-    // gpu_sum<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_data,d_result,length);
-    SumArray<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c,d_data);
+    gpu_sum<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c,d_data);
+    // SumArray<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c,d_data);
 
     cudaEventRecord(stop, 0);
     cudaEventSynchronize(start);
@@ -165,13 +172,50 @@ int main()
     cudaMemcpy(c, d_c, BLOCKS_PerGrid * sizeof(int), cudaMemcpyDeviceToHost);
     h_result = cpu_sum(c, BLOCKS_PerGrid);
 
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
+
     cudaFree(d_data);
     cudaFree(d_c);
-
-
+    // cudaFree(d_result);
     printf("gpu result: %d, time:%f(ms)\n", h_result, gpu_time);
+
+
+
+    /* algorithm 2 */
+
+    int h_result2 = 0;
+    int *d_data2;
+    // int *d_result;
+    int c2[BLOCKS_PerGrid];
+    int *d_c2;
+
+    HANDLE_ERROR( cudaMalloc((void **)&d_data2, TOTALN*sizeof(int)));
+    // HANDLE_ERROR( cudaMalloc((void **)&d_result, 1*sizeof(int)) );
+    HANDLE_ERROR( cudaMemcpy(d_data2, data, TOTALN*sizeof(int), cudaMemcpyHostToDevice));
+    // HANDLE_ERROR( cudaMemcpy(d_result, &h_result, 1*sizeof(int), cudaMemcpyHostToDevice));
+    HANDLE_ERROR( cudaMalloc((void**)&d_c2, BLOCKS_PerGrid * sizeof(int)));
+    cudaEventRecord(start, 0);
+    // gpu_sum<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c,d_data);
+    SumArray<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c2,d_data2);
+
+    cudaEventRecord(stop, 0);
+    cudaEventSynchronize(start);
+    cudaEventSynchronize(stop);
+    float gpu_time2;
+    cudaEventElapsedTime(&gpu_time2, start, stop);
+
+    // cudaMemcpy(&h_result, d_result, 1*sizeof(int), cudaMemcpyDeviceToHost);
+    cudaDeviceSynchronize();
+    cudaMemcpy(c2, d_c2, BLOCKS_PerGrid * sizeof(int), cudaMemcpyDeviceToHost);
+    h_result2 = cpu_sum(c2, BLOCKS_PerGrid);
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    cudaFree(d_data2);
+    cudaFree(d_c2);
+    // cudaFree(d_result);
+
+
+    printf("gpu result: %d, time:%f(ms)\n", h_result2, gpu_time2);
     return 0;
 
 }
