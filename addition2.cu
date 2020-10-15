@@ -10,7 +10,7 @@ using namespace std;
 #define tile_width 10
 
 
-#define TOTALN 64*32*100000
+#define TOTALN 64*32
 #define THREADS_PerBlock 64
 #define BLOCKS_PerGrid 32
 #define EPOCH 10
@@ -168,7 +168,7 @@ int main()
     cudaGetDeviceCount(&count);
     printf("We have %d devices\n", count);
 
-    cudaSetDevice(0);
+    cudaSetDevice(1);
 
 
 
