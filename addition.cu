@@ -3,7 +3,7 @@
 #include <cstdlib>
 #include <cuda.h>
 #include <cuda_runtime.h>
-#include <time.h>
+// #include <time.h>
 using namespace std;
 
 #define length 320
@@ -13,6 +13,7 @@ using namespace std;
 #define TOTALN 64*32*100
 #define THREADS_PerBlock 64
 #define BLOCKS_PerGrid 32
+#define EPOCH 100
 
 
 static void HandleError( cudaError_t err, const char *file, int line ) {
@@ -34,6 +35,14 @@ int cpu_sum(int *data, int len){
     return result;
 }
 
+float avg(float *data, int len){
+    float result = 0;
+    for (int i = 0; i<len; i++){
+        result += data[i];
+    }
+    result /= len;
+    return result;
+}
 
 // __global__ void gpu_sum(int *d_data, int * result, int len){
 //     // int thread_num = ceil(length/tile_width);
@@ -115,6 +124,14 @@ __global__ void SumArray(int *c, int *a) {
 
 int main()
 {
+
+    int count;
+    cudaGetDeviceCount(&count);
+    printf("We have %d devices\n", count);
+
+    cudaSetDevice(1);
+
+
     int data[TOTALN] = {0};
     int cpu_result;
     int i;
@@ -131,14 +148,18 @@ int main()
     }
     // printf(" %d %d %d\n",data[0],data[1],data[2]);
 
-    cudaEventRecord(start, 0);
-    cpu_result = cpu_sum(data,TOTALN);
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(start);
-    cudaEventSynchronize(stop);
-    float cpu_time;
-    cudaEventElapsedTime(&cpu_time, start, stop);
-    printf("cpu result: %d, time:%f(ms)\n", cpu_result, cpu_time);
+    float cpu_time[EPOCH];
+    for (int t = 0; t < EPOCH; t++){
+        cudaEventRecord(start, 0);
+        cpu_result = cpu_sum(data,TOTALN);
+        cudaEventRecord(stop, 0);
+        cudaEventSynchronize(start);
+        cudaEventSynchronize(stop);
+        // float cpu_time;
+        cudaEventElapsedTime(&cpu_time[t], start, stop);
+        // printf("cpu result: %d, time:%f(ms)\n", cpu_result, cpu_time);
+    }
+    printf("cpu average time: %f\n", avg(cpu_time, EPOCH));
     
 
     /* for gpu */
@@ -149,34 +170,40 @@ int main()
     int c[BLOCKS_PerGrid];
     int *d_c;
 
-    HANDLE_ERROR( cudaMalloc((void **)&d_data, TOTALN*sizeof(int)));
-    // HANDLE_ERROR( cudaMalloc((void **)&d_result, 1*sizeof(int)) );
-    HANDLE_ERROR( cudaMemcpy(d_data, data, TOTALN*sizeof(int), cudaMemcpyHostToDevice));
-    // HANDLE_ERROR( cudaMemcpy(d_result, &h_result, 1*sizeof(int), cudaMemcpyHostToDevice));
-    HANDLE_ERROR( cudaMalloc((void**)&d_c, BLOCKS_PerGrid * sizeof(int)));
+    float gpu_time[EPOCH];
+    for (int t = 0; t < EPOCH; t++){
+        HANDLE_ERROR( cudaMalloc((void **)&d_data, TOTALN*sizeof(int)));
+        // HANDLE_ERROR( cudaMalloc((void **)&d_result, 1*sizeof(int)) );
+        HANDLE_ERROR( cudaMemcpy(d_data, data, TOTALN*sizeof(int), cudaMemcpyHostToDevice));
+        // HANDLE_ERROR( cudaMemcpy(d_result, &h_result, 1*sizeof(int), cudaMemcpyHostToDevice));
+        HANDLE_ERROR( cudaMalloc((void**)&d_c, BLOCKS_PerGrid * sizeof(int)));
+    
+    
+        /* Launch the GPU kernel */
+        cudaEventRecord(start, 0);
+        gpu_sum<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c,d_data);
+        // SumArray<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c,d_data);
+    
+        cudaEventRecord(stop, 0);
+        cudaEventSynchronize(start);
+        cudaEventSynchronize(stop);
+        // float gpu_time;
+        cudaEventElapsedTime(&gpu_time[t], start, stop);
+    
+        // cudaMemcpy(&h_result, d_result, 1*sizeof(int), cudaMemcpyDeviceToHost);
+        cudaDeviceSynchronize();
+        cudaMemcpy(c, d_c, BLOCKS_PerGrid * sizeof(int), cudaMemcpyDeviceToHost);
+        h_result = cpu_sum(c, BLOCKS_PerGrid);
+    
+    
+        cudaFree(d_data);
+        cudaFree(d_c);
+        // cudaFree(d_result);
+        // printf("gpu result: %d, time:%f(ms)\n", h_result, gpu_time[t]);
+    }
 
-
-    /* Launch the GPU kernel */
-    cudaEventRecord(start, 0);
-    gpu_sum<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c,d_data);
-    // SumArray<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c,d_data);
-
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(start);
-    cudaEventSynchronize(stop);
-    float gpu_time;
-    cudaEventElapsedTime(&gpu_time, start, stop);
-
-    // cudaMemcpy(&h_result, d_result, 1*sizeof(int), cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();
-    cudaMemcpy(c, d_c, BLOCKS_PerGrid * sizeof(int), cudaMemcpyDeviceToHost);
-    h_result = cpu_sum(c, BLOCKS_PerGrid);
-
-
-    cudaFree(d_data);
-    cudaFree(d_c);
-    // cudaFree(d_result);
-    printf("gpu result: %d, time:%f(ms)\n", h_result, gpu_time);
+    printf("gpu1 average time: %f\n", avg(gpu_time, EPOCH));
+    
 
 
 
@@ -188,34 +215,40 @@ int main()
     int c2[BLOCKS_PerGrid];
     int *d_c2;
 
-    HANDLE_ERROR( cudaMalloc((void **)&d_data2, TOTALN*sizeof(int)));
-    // HANDLE_ERROR( cudaMalloc((void **)&d_result, 1*sizeof(int)) );
-    HANDLE_ERROR( cudaMemcpy(d_data2, data, TOTALN*sizeof(int), cudaMemcpyHostToDevice));
-    // HANDLE_ERROR( cudaMemcpy(d_result, &h_result, 1*sizeof(int), cudaMemcpyHostToDevice));
-    HANDLE_ERROR( cudaMalloc((void**)&d_c2, BLOCKS_PerGrid * sizeof(int)));
-    cudaEventRecord(start, 0);
-    // gpu_sum<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c,d_data);
-    SumArray<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c2,d_data2);
+    float gpu_time2[EPOCH];
 
-    cudaEventRecord(stop, 0);
-    cudaEventSynchronize(start);
-    cudaEventSynchronize(stop);
-    float gpu_time2;
-    cudaEventElapsedTime(&gpu_time2, start, stop);
+    for(int t=0; t<EPOCH; t++){
+        HANDLE_ERROR( cudaMalloc((void **)&d_data2, TOTALN*sizeof(int)));
+        // HANDLE_ERROR( cudaMalloc((void **)&d_result, 1*sizeof(int)) );
+        HANDLE_ERROR( cudaMemcpy(d_data2, data, TOTALN*sizeof(int), cudaMemcpyHostToDevice));
+        // HANDLE_ERROR( cudaMemcpy(d_result, &h_result, 1*sizeof(int), cudaMemcpyHostToDevice));
+        HANDLE_ERROR( cudaMalloc((void**)&d_c2, BLOCKS_PerGrid * sizeof(int)));
+        cudaEventRecord(start, 0);
+        // gpu_sum<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c,d_data);
+        SumArray<<< BLOCKS_PerGrid, THREADS_PerBlock >>>(d_c2,d_data2);
+    
+        cudaEventRecord(stop, 0);
+        cudaEventSynchronize(start);
+        cudaEventSynchronize(stop);
+        // float gpu_time2;
+        cudaEventElapsedTime(&gpu_time2[t], start, stop);
+    
+        // cudaMemcpy(&h_result, d_result, 1*sizeof(int), cudaMemcpyDeviceToHost);
+        cudaDeviceSynchronize();
+        cudaMemcpy(c2, d_c2, BLOCKS_PerGrid * sizeof(int), cudaMemcpyDeviceToHost);
+        h_result2 = cpu_sum(c2, BLOCKS_PerGrid);
+    
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
+        cudaFree(d_data2);
+        cudaFree(d_c2);
+    }
+    printf("gpu2 average time: %f\n", avg(gpu_time2, EPOCH));
 
-    // cudaMemcpy(&h_result, d_result, 1*sizeof(int), cudaMemcpyDeviceToHost);
-    cudaDeviceSynchronize();
-    cudaMemcpy(c2, d_c2, BLOCKS_PerGrid * sizeof(int), cudaMemcpyDeviceToHost);
-    h_result2 = cpu_sum(c2, BLOCKS_PerGrid);
-
-    cudaEventDestroy(start);
-    cudaEventDestroy(stop);
-    cudaFree(d_data2);
-    cudaFree(d_c2);
     // cudaFree(d_result);
 
 
-    printf("gpu result: %d, time:%f(ms)\n", h_result2, gpu_time2);
+    // printf("gpu result: %d, time:%f(ms)\n", h_result2, gpu_time2);
     return 0;
 
 }
