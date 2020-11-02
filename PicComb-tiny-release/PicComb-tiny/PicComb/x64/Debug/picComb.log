@@ -1,0 +1,5 @@
+﻿  find.cpp
+C:\Users\a\Desktop\GPU_Application\PicComb-tiny-release-20190925\PicComb-tiny-release\PicComb-tiny\common\inc\bvh.h(342,1): warning C4267: “初始化”: 从“size_t”转换到“int”，可能丢失数据
+C:\Users\a\Desktop\GPU_Application\PicComb-tiny-release-20190925\PicComb-tiny-release\PicComb-tiny\common\inc\bvh.h(446,1): warning C4267: “=”: 从“size_t”转换到“int”，可能丢失数据
+C:\Users\a\Desktop\GPU_Application\PicComb-tiny-release-20190925\PicComb-tiny-release\PicComb-tiny\common\inc\bvh.h(519,1): warning C4267: “=”: 从“size_t”转换到“int”，可能丢失数据
+  picComb.vcxproj -> C:\Users\a\Desktop\GPU_Application\PicComb-tiny-release-20190925\PicComb-tiny-release\PicComb-tiny\x64\Debug\picComb.exe
