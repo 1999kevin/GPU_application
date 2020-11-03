@@ -1,9 +1,3 @@
-
-// #if defined(WIN32)
-// #define WIN32_LEAN_AND_MEAN
-// #  include <windows.h>
-// #endif
-
 #include "cuda_runtime.h"
 // #include "device_launch_parameters.h"
 #include <cuda.h>
@@ -18,7 +12,9 @@
 #include "timer.h"
 #include "box.h"
 #include "xyz-rgb.h"
-// #include "C:\Program Files (x86)\Windows Kits\10\Include\10.0.18362.0\um\wingdi.h"
+#include "windows.h"
+#include "wingdi.h"
+#include "WTypesbase.h"
 
 using namespace std;
 
@@ -60,75 +56,75 @@ public:
 	int width() const { return _cx; }
 	int height() const { return _cy; }
 
-	// virtual void saveAsBmp(float* ptr, char* fn) {
-	// 	int sz = _cx * _cy * 3;
+	virtual void saveAsBmp(float* ptr, char* fn) {
+		int sz = _cx * _cy * 3;
 
-	// 	BYTE* idx = new BYTE[sz];
-	// 	for (int i = 0; i < sz; ) {
-	// 		idx[i] = ptr[i + 2] * 255;
-	// 		idx[i + 1] = ptr[i + 1] * 255;
-	// 		idx[i + 2] = ptr[i] * 255;
+		BYTE* idx = new BYTE[sz];
+		for (int i = 0; i < sz; ) {
+			idx[i] = ptr[i + 2] * 255;
+			idx[i + 1] = ptr[i + 1] * 255;
+			idx[i + 2] = ptr[i] * 255;
 
-	// 		i += 3;
-	// 	}
+			i += 3;
+		}
 
-	// 	if (!idx)
-	// 		return;
+		if (!idx)
+			return;
 
-	// 	int colorTablesize = 0;
+		int colorTablesize = 0;
 
-	// 	int biBitCount = 24;
+		int biBitCount = 24;
 
-	// 	if (biBitCount == 8)
-	// 		colorTablesize = 1024;
+		if (biBitCount == 8)
+			colorTablesize = 1024;
 
-	// 	//���洢ͼ������ÿ���ֽ���Ϊ4�ı���
-	// 	int lineByte = (_cx * biBitCount / 8 + 3) / 4 * 4;
+		//
+		int lineByte = (_cx * biBitCount / 8 + 3) / 4 * 4;
 
-	// 	//�Զ�����д�ķ�ʽ���ļ�
-	// 	FILE* fp = fopen(fn, "wb");
-	// 	if (fp == 0)
-	// 		return;
+		//
+		FILE* fp = fopen(fn, "wb");
+		if (fp == 0)
+			return;
 
-	// 	//����λͼ�ļ�ͷ�ṹ��������д�ļ�ͷ��Ϣ
-	// 	BITMAPFILEHEADER fileHead;
-	// 	fileHead.bfType = 0x4D42;//bmp����
-	// 							 //bfSize��ͼ���ļ�4����ɲ���֮��
-	// 	fileHead.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + colorTablesize + lineByte * _cy;
-	// 	fileHead.bfReserved1 = 0;
-	// 	fileHead.bfReserved2 = 0;
+		//
+		BITMAPFILEHEADER fileHead;
+		fileHead.bfType = 0x4D42;
 
-	// 	//bfOffBits��ͼ���ļ�ǰ3����������ռ�֮��
-	// 	fileHead.bfOffBits = 54 + colorTablesize;
+		fileHead.bfSize = sizeof(BITMAPFILEHEADER) + sizeof(BITMAPINFOHEADER) + colorTablesize + lineByte * _cy;
+		fileHead.bfReserved1 = 0;
+		fileHead.bfReserved2 = 0;
 
-	// 	//д�ļ�ͷ���ļ�
-	// 	fwrite(&fileHead, sizeof(BITMAPFILEHEADER), 1, fp);
+		//
+		fileHead.bfOffBits = 54 + colorTablesize;
 
-	// 	//����λͼ��Ϣͷ�ṹ��������д��Ϣͷ��Ϣ
-	// 	BITMAPINFOHEADER head;
-	// 	head.biBitCount = biBitCount;
-	// 	head.biClrImportant = 0;
-	// 	head.biClrUsed = 0;
-	// 	head.biCompression = 0;
-	// 	head.biHeight = _cy;
-	// 	head.biPlanes = 1;
-	// 	head.biSize = 40;
-	// 	head.biSizeImage = lineByte * _cy;
-	// 	head.biWidth = _cx;
-	// 	head.biXPelsPerMeter = 0;
-	// 	head.biYPelsPerMeter = 0;
+		//
+		fwrite(&fileHead, sizeof(BITMAPFILEHEADER), 1, fp);
 
-	// 	//дλͼ��Ϣͷ���ڴ�
-	// 	fwrite(&head, sizeof(BITMAPINFOHEADER), 1, fp);
+		//
+		BITMAPINFOHEADER head;
+		head.biBitCount = biBitCount;
+		head.biClrImportant = 0;
+		head.biClrUsed = 0;
+		head.biCompression = 0;
+		head.biHeight = _cy;
+		head.biPlanes = 1;
+		head.biSize = 40;
+		head.biSizeImage = lineByte * _cy;
+		head.biWidth = _cx;
+		head.biXPelsPerMeter = 0;
+		head.biYPelsPerMeter = 0;
 
-	// 	//дλͼ���ݽ��ļ�
-	// 	fwrite(idx, _cy * lineByte, 1, fp);
+		//
+		fwrite(&head, sizeof(BITMAPINFOHEADER), 1, fp);
 
-	// 	//�ر��ļ�
-	// 	fclose(fp);
+		//
+		fwrite(idx, _cy * lineByte, 1, fp);
 
-	// 	delete[] idx;
-	// }
+		//
+		fclose(fp);
+
+		delete[] idx;
+	}
 
 	void resetRGBnew() {
 		if (_rgbsNew) delete[] _rgbsNew;
@@ -159,9 +155,9 @@ public:
 
 	float* rgbs() { return _rgbs; }
 
-	// void saveNewRGB(char* fn) {
-	// 	saveAsBmp(_rgbsNew, fn);
-	// }
+	void saveNewRGB(char* fn) {
+		saveAsBmp(_rgbsNew, fn);
+	}
 
 	void load(char* fname, int numofImg, bool updateHash = true) {
 		char rgbFile[512], xyzFile[512];
@@ -170,9 +166,9 @@ public:
 
 		if (updateHash)
 			loadRGB(rgbFile);
-		printf("try to load XYZ\n");
+		// printf("try to load XYZ\n");
 		loadXYZ(xyzFile);
-		printf("in load\n");
+		// printf("in load\n");
 		resetRGBnew();
 
 		float* p1 = _xyzs;
@@ -221,9 +217,9 @@ public:
 		resetNearest();
 	}
 
-	// void save(char* fname) {
-	// 	saveNewRGB(fname);
-	// }
+	void save(char* fname) {
+		saveNewRGB(fname);
+	}
 
 
 // 	void update() {
@@ -260,7 +256,9 @@ int main()
 	printf("here\n");
 	TIMING_BEGIN("Start loading...")
 	target.load("all.bmp");
+	printf("size1: %d\n",gHashTab.size());
 	scene[0].load("0-55.bmp", 0);
+	printf("size2: %d\n",gHashTab.size());
 	TIMING_END("Loading done...")
 
 	TIMING_BEGIN("Start build_bvh...")
@@ -272,7 +270,7 @@ int main()
 	// TIMING_END("Rescaning done...")
 
 	// 	destroy_bvh();
-	// target.save("output.bmp");
+	target.save("output.bmp");
 	float a = 0;
 	test_wrapper(&a);
 	printf("a: %f\n", a);

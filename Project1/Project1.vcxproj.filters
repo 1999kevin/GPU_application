@@ -44,6 +44,12 @@
     <ClInclude Include="xyz-rgb.h">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="wingdi.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="WTypesbase.h">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Image Include="all.bmp">

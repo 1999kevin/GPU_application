@@ -157,6 +157,8 @@
     <ClInclude Include="forceline.h" />
     <ClInclude Include="timer.h" />
     <ClInclude Include="vec3f.h" />
+    <ClInclude Include="wingdi.h" />
+    <ClInclude Include="WTypesbase.h" />
     <ClInclude Include="xyz-rgb.h" />
   </ItemGroup>
   <ItemGroup>
