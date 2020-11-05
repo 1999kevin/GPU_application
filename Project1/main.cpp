@@ -155,6 +155,8 @@ public:
 
 	float* rgbs() { return _rgbs; }
 
+	float* xyzs() { return _xyzs; }
+
 	void saveNewRGB(char* fn) {
 		saveAsBmp(_rgbsNew, fn);
 	}
@@ -222,54 +224,42 @@ public:
 	}
 
 
-// 	void update() {
-
-// #pragma omp parallel for schedule(dynamic, 5)
-// 		for (int i = 0; i < _cx; i++) {
-// 			printf("%d of %d done...\n", i, _cx);
-
-// 			for (int j = 0; j < _cy; j++) {
-// 				float* p1 = _xyzs + (i * _cy + j) * 3;
-// 				float* p2 = _rgbsNew + (i * _cy + j) * 3;
-// 				float* p3 = _nearest + (i * _cy + j);
-// 				float* p4 = _rgbs + (i * _cy + j) * 3;
-
-// 				int idx, pidx;
-
-// 				vec3f cr;
-// 				bool ret = getColor(vec3f(p1), p3, cr, idx, pidx);
-// 				if (ret) {
-// 					p2[0] = cr.x;
-// 					p2[1] = cr.y;
-// 					p2[2] = cr.z;
-// 				}
-// 			}
-// 		}
-
-// 	}
 };
+
+
+void loadSceneXyzs(float *scene_xyzs, int size){
+	for (int i=0; i<size; i++){
+		scene_xyzs[i*3] = gHashTag[i]._xyz.x;
+		scene_xyzs[i*3+1] = gHashTag[i]._xyz.y;
+		scene_xyzs[i*3+2] = gHashTag[i]._xyz.z;
+	}
+}
+
 
 SceneData scene[18];
 ProgScene target;
 int main()
 {
-	printf("here\n");
+	printf("sizeof*xyz2rgb: %d\n", sizeof(xyz2rgb));
 	TIMING_BEGIN("Start loading...")
 	target.load("all.bmp");
-	printf("size1: %d\n",gHashTab.size());
+	// printf("size1: %d\n",gHashTab.size());
 	scene[0].load("0-55.bmp", 0);
 	printf("size2: %d\n",gHashTab.size());
 	TIMING_END("Loading done...")
 
-	TIMING_BEGIN("Start build_bvh...")
-	// build_bvh();
-	TIMING_END("build_bvh done...")
-
-	// 	TIMING_BEGIN("Start rescanning...")
-	// 	target.update();
+	// TIMING_BEGIN("Start rescanning...")
+	// // 	target.update();
 	// TIMING_END("Rescaning done...")
 
-	// 	destroy_bvh();
+	float *target_xyzs = target.xyzs();
+	int scene_size = gHashTag.size();
+
+	float *scene_xyzs = （float*)malloc(scene_size*3*sizeof(float));
+	loadSceneXyzs(scene_xyzs,scene_size);
+
+	
+
 	target.save("output.bmp");
 	float a = 0;
 	test_wrapper(&a);
