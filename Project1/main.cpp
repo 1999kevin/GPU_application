@@ -20,6 +20,8 @@ using namespace std;
 
 std::vector<xyz2rgb> gHashTab;
 
+#define THREAD_PER_BLOCK 512
+
 class SceneData {
 protected:
 	int _cx, _cy;
@@ -157,6 +159,10 @@ public:
 
 	float* xyzs() { return _xyzs; }
 
+	void* setRgbs(float *rgbs){
+		memcpy(_rgbs, rgbs, _cx*_cy*sizeof(float));
+	}
+
 	void saveNewRGB(char* fn) {
 		saveAsBmp(_rgbsNew, fn);
 	}
@@ -227,23 +233,52 @@ public:
 };
 
 
-void loadSceneXyzs(float *scene_xyzs, int size){
-	for (int i=0; i<size; i++){
-		scene_xyzs[i*3] = gHashTag[i]._xyz.x;
-		scene_xyzs[i*3+1] = gHashTag[i]._xyz.y;
-		scene_xyzs[i*3+2] = gHashTag[i]._xyz.z;
+// void loadSceneXyzs(float *scene_xyzs, int size){
+// 	for (int i=0; i<size; i++){
+// 		scene_xyzs[i*3] = gHashTab[i].xyz().x;
+// 		scene_xyzs[i*3+1] = gHashTab[i].xyz().y;
+// 		scene_xyzs[i*3+2] = gHashTab[i].xyz().z;
+// 	}
+// }
+
+
+__global__ void findNearestNeibor(float *target_xyzs_dev, float *scene_xyzs_dev, int scene_size, 
+								  float *min_distances_dev, int *min_neibor_idxs)
+{
+	int index = blockIdx.x * blockDim.x + threadIdx.x;
+	float min_distance = 1e6, cur_distance;
+	
+	float target_x = target_xyzs_dev[index*3];
+	float target_y = target_xyzs_dev[index*3+1];
+	float target_z = target_xyzs_dev[index*3+2];
+
+	int min_neibor_idx = -1;
+
+	for (int i=0; i<scene_size; i++){
+		float scene_x = scene_xyzs_dev[i*3];
+		float scene_y = scene_xyzs_dev[i*3+1];
+		float scene_z = scene_xyzs_dev[i*3+2];
+		cur_distance = (target_x-scene_x)*(target_x-scene_x)+(target_y-scene_y)*(target_y-scene_y)+(target_z-scene_z)*(target_z-scene_z);
+		if (cur_distance < min_distance){
+			min_neibor_idx = i;
+			min_distance = cur_distance;
+		}
 	}
+
+	min_distances_dev[index] = min_distance;
+	min_neibor_idxs[index] = min_neibor_idx;
+								  
 }
+
+
 
 
 SceneData scene[18];
 ProgScene target;
 int main()
 {
-	printf("sizeof*xyz2rgb: %d\n", sizeof(xyz2rgb));
 	TIMING_BEGIN("Start loading...")
 	target.load("all.bmp");
-	// printf("size1: %d\n",gHashTab.size());
 	scene[0].load("0-55.bmp", 0);
 	printf("size2: %d\n",gHashTab.size());
 	TIMING_END("Loading done...")
@@ -253,16 +288,47 @@ int main()
 	// TIMING_END("Rescaning done...")
 
 	float *target_xyzs = target.xyzs();
-	int scene_size = gHashTag.size();
+	float *scene_xyzs = scene[0].xyzs();
 
-	float *scene_xyzs = （float*)malloc(scene_size*3*sizeof(float));
-	loadSceneXyzs(scene_xyzs,scene_size);
+	size_t target_size = target.width() * target.height();
+	size_t scene_size = scene[0].width() * scene[0].height();
+	printf("target_size: %d, scene_size: %d\n", target_size, scene_size);
 
-	
+	int* min_neibor_idxs = (int*)malloc(target_size*sizeof(int));
+	float* min_distances = (float*)malloc(target_size*sizeof(float));
 
+	/* prepare device memory */
+	float *target_xyzs_dev, scene_xyzs_dev, min_distances_dev;
+	int* min_neibor_idxs_dev;
+	cudaMalloc((void**)&target_xyzs_dev, target_size*3*sizeof(float));
+	cudaMalloc((void**)&scene_xyzs_dev, scene_size*3*sizeof(float));
+	cudaMalloc((void**)&min_distances_dev, target_size*sizeof(float));
+	cudaMalloc((void**)&min_neibor_idxs, target_size*sizeof(int));
+	cudaMemcpy(target_xyzs_dev, target_xyzs, target_size*3*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(scene_xyzs_dev, scene_xyzs, scene_size*3*sizeof(float), cudaMemcpyHostToDevice);
+
+	dim3 block_size(THREAD_PER_BLOCK);
+	dim3 grid_size(target_size/THREAD_PER_BLOCK);
+	/* apply kernel function */ 
+	findNearestNeibor<<<grid_size, block_size>>>(target_xyzs_dev, scene_xyzs_dev, scene_size, min_distances_dev, min_neibor_idxs);
+
+
+	cudaMemcpy(min_distances, min_distances_dev, target_size*sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(min_neibor_idxs, min_neibor_idxs_dev, target_size*sizeof(int), cudaMemcpyDeviceToHost);
+
+	float *new_target_rgbs = (float *)malloc(target_size*3*sizeof(float));
+	float *scene_rgbs = scene[0].rgbs();
+	float bound = 1.5*1.5;
+	for (int i=0; i<target_size; i++){
+		if(min_distances[i]<bound){
+			int min_neibor_idx = min_neibor_idxs[i];
+			new_target_rgbs[i*3] = scene_rgbs[min_neibor_idx*3];
+			new_target_rgbs[i*3+1] = scene_rgbs[min_neibor_idx*3+1];
+			new_target_rgbs[i*3+2] = scene_rgbs[min_neibor_idx*3+2];
+		}
+	}
+	target.setRgbs(new_target_rgbs);
 	target.save("output.bmp");
-	float a = 0;
-	test_wrapper(&a);
-	printf("a: %f\n", a);
+
 	return 0;
 }
