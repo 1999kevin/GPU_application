@@ -159,8 +159,8 @@ public:
 
 	float* xyzs() { return _xyzs; }
 
-	void* setRgbs(float *rgbs){
-		memcpy(_rgbs, rgbs, _cx*_cy*sizeof(float));
+	void setRgbsNew(float *rgbs){
+		memcpy(_rgbsNew, rgbs, _cx*_cy*sizeof(float)*3);
 	}
 
 	void saveNewRGB(char* fn) {
@@ -243,7 +243,7 @@ public:
 
 
 __global__ void findNearestNeibor(float *target_xyzs_dev, float *scene_xyzs_dev, int scene_size, 
-								  float *min_distances_dev, int *min_neibor_idxs)
+								  float *min_distances_dev, int *min_neibor_idxs_dev)
 {
 	int index = blockIdx.x * blockDim.x + threadIdx.x;
 	float min_distance = 1e6, cur_distance;
@@ -266,7 +266,7 @@ __global__ void findNearestNeibor(float *target_xyzs_dev, float *scene_xyzs_dev,
 	}
 
 	min_distances_dev[index] = min_distance;
-	min_neibor_idxs[index] = min_neibor_idx;
+	min_neibor_idxs_dev[index] = min_neibor_idx;
 								  
 }
 
@@ -298,20 +298,21 @@ int main()
 	float* min_distances = (float*)malloc(target_size*sizeof(float));
 
 	/* prepare device memory */
-	float *target_xyzs_dev, scene_xyzs_dev, min_distances_dev;
+	float *target_xyzs_dev, *scene_xyzs_dev, *min_distances_dev;
 	int* min_neibor_idxs_dev;
 	cudaMalloc((void**)&target_xyzs_dev, target_size*3*sizeof(float));
 	cudaMalloc((void**)&scene_xyzs_dev, scene_size*3*sizeof(float));
 	cudaMalloc((void**)&min_distances_dev, target_size*sizeof(float));
-	cudaMalloc((void**)&min_neibor_idxs, target_size*sizeof(int));
+	cudaMalloc((void**)&min_neibor_idxs_dev, target_size*sizeof(int));
 	cudaMemcpy(target_xyzs_dev, target_xyzs, target_size*3*sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(scene_xyzs_dev, scene_xyzs, scene_size*3*sizeof(float), cudaMemcpyHostToDevice);
 
 	dim3 block_size(THREAD_PER_BLOCK);
 	dim3 grid_size(target_size/THREAD_PER_BLOCK);
 	/* apply kernel function */ 
-	findNearestNeibor<<<grid_size, block_size>>>(target_xyzs_dev, scene_xyzs_dev, scene_size, min_distances_dev, min_neibor_idxs);
-
+	printf("ready to apply kernel\n");
+	findNearestNeibor<<<grid_size, block_size>>>(target_xyzs_dev, scene_xyzs_dev, scene_size, min_distances_dev, min_neibor_idxs_dev);
+	printf("after kernel function\n");
 
 	cudaMemcpy(min_distances, min_distances_dev, target_size*sizeof(float), cudaMemcpyDeviceToHost);
 	cudaMemcpy(min_neibor_idxs, min_neibor_idxs_dev, target_size*sizeof(int), cudaMemcpyDeviceToHost);
@@ -319,16 +320,30 @@ int main()
 	float *new_target_rgbs = (float *)malloc(target_size*3*sizeof(float));
 	float *scene_rgbs = scene[0].rgbs();
 	float bound = 1.5*1.5;
+	printf("after copy back\n");
 	for (int i=0; i<target_size; i++){
 		if(min_distances[i]<bound){
 			int min_neibor_idx = min_neibor_idxs[i];
+			// printf("i: %d, idx: %d\n", i, min_neibor_idx);
 			new_target_rgbs[i*3] = scene_rgbs[min_neibor_idx*3];
 			new_target_rgbs[i*3+1] = scene_rgbs[min_neibor_idx*3+1];
 			new_target_rgbs[i*3+2] = scene_rgbs[min_neibor_idx*3+2];
 		}
 	}
-	target.setRgbs(new_target_rgbs);
-	target.save("output.bmp");
+	printf("here\n");
 
+	cudaFree(target_xyzs_dev);
+	cudaFree(scene_xyzs_dev);
+	cudaFree(min_distances_dev);
+	cudaFree(min_neibor_idxs);
+
+	printf("try to save\n");
+	target.setRgbsNew(new_target_rgbs);
+	target.save("output.bmp");
+	printf("after save\n");
+	free(min_neibor_idxs);
+	free(min_distances);
+	free(new_target_rgbs);
+	printf("last line\n");
 	return 0;
 }
