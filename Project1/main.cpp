@@ -20,7 +20,7 @@ using namespace std;
 
 std::vector<xyz2rgb> gHashTab;
 
-#define THREAD_PER_BLOCK 512
+#define THREAD_PER_BLOCK 1024
 
 class SceneData {
 protected:
@@ -277,12 +277,62 @@ __global__ void findNearestNeibor(float *target_xyzs_dev, float *scene_xyzs_dev,
 }
 
 
+__global__ void findNearestNeibor2(float *target_xyzs_dev, float *scene_xyzs_dev, int scene_size, 
+								  float *min_distances_dev, int *min_neibor_idxs_dev)
+{
+	int bx = blockIdx.x;
+	int tx = threadIdx.x;
+	int index = bx * blockDim.x + tx;
+	// int shared_memory_length = blockDim.x;
+	__shared__ float shared_scene_xyzs[1024*3];
+	// int loop_total = scene_size / 512;
+
+	min_distances_dev[index] = 1e6;
+	min_neibor_idxs_dev[index] = -1;
+
+	float target_x = target_xyzs_dev[index*3];
+	float target_y = target_xyzs_dev[index*3+1];
+	float target_z = target_xyzs_dev[index*3+2];
+	float scene_x, scene_y, scene_z, cur_distance;
+
+	for (int count = 0 ; count < scene_size / 1024; count++){
+		shared_scene_xyzs[3*tx] = scene_xyzs_dev[(count*1024+tx)*3];
+		shared_scene_xyzs[3*tx+1] = scene_xyzs_dev[(count*1024+tx)*3+1];
+		shared_scene_xyzs[3*tx+2] = scene_xyzs_dev[(count*1024+tx)*3+2];
+		__syncthreads();
+		float cur_min_distances = min_distances_dev[index];
+		int cur_min_index = min_neibor_idxs_dev[index];
+		for (int i = 0; i < 1024; i++){
+			scene_x = shared_scene_xyzs[i*3];
+			scene_y = shared_scene_xyzs[i*3+1];
+			scene_z = shared_scene_xyzs[i*3+2];
+			cur_distance = (target_x-scene_x)*(target_x-scene_x)+(target_y-scene_y)*(target_y-scene_y)+(target_z-scene_z)*(target_z-scene_z);
+			if (cur_distance < cur_min_distances){
+				cur_min_distances = cur_distance;
+				cur_min_index = count*1024+i;
+			}
+		}
+		min_distances_dev[index] = cur_min_distances;
+		min_neibor_idxs_dev[index] = cur_min_index;
+		__syncthreads();
+	}
+
+								  
+}
+
 
 
 SceneData scene[18];
 ProgScene target;
 int main()
 {
+	// cudaDeviceProp properties;
+	// cudaGetDeviceProperties(&properties, 0);
+	// printf("sharedmemo  per mp is \t%ld\n", properties.sharedMemPerBlock);
+	// printf("Max thread per block is \t%ld\n", properties.maxThreadsPerBlock);
+	// printf("Max threads dimemsion is \t%ld;%ld;%ld\n", properties.maxThreadsDim[0],properties.maxThreadsDim[1], properties.maxThreadsDim[1]);
+	
+	
 	TIMING_BEGIN("Start loading...")
 	target.load("all.bmp");
 	scene[0].load("0-55.bmp", 0);
@@ -311,7 +361,7 @@ int main()
 
 
 	dim3 block_size(THREAD_PER_BLOCK);
-	dim3 grid_size(target_size/THREAD_PER_BLOCK/8);
+	dim3 grid_size(target_size/THREAD_PER_BLOCK);
 	/* apply kernel function */ 
 	TIMING_BEGIN("Running kernel function ...")
 	findNearestNeibor<<<grid_size, block_size>>>(target_xyzs_dev, scene_xyzs_dev, scene_size, min_distances_dev, min_neibor_idxs_dev);
@@ -351,7 +401,7 @@ int main()
 	// printf("try to save\n");
 	TIMING_BEGIN("Writing output file ...")
 	target.setRgbsNew(new_target_rgbs);
-	target.save("output.bmp");
+	target.save("output2.bmp");
 	TIMING_END("Write output file done ...")
 	// printf("after save\n");
 	free(min_neibor_idxs);
