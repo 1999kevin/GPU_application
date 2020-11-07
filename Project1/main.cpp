@@ -283,8 +283,9 @@ __global__ void findNearestNeibor2(float *target_xyzs_dev, float *scene_xyzs_dev
 	int bx = blockIdx.x;
 	int tx = threadIdx.x;
 	int index = bx * blockDim.x + tx;
-	// int shared_memory_length = blockDim.x;
-	__shared__ float shared_scene_xyzs[1024*3];
+	int Element_Per_Thread = 2;
+	int shared_xyzs_size = 512*Element_Per_Thread;
+	__shared__ float shared_scene_xyzs[4*512*3];
 	// int loop_total = scene_size / 512;
 
 	min_distances_dev[index] = 1e6;
@@ -295,21 +296,24 @@ __global__ void findNearestNeibor2(float *target_xyzs_dev, float *scene_xyzs_dev
 	float target_z = target_xyzs_dev[index*3+2];
 	float scene_x, scene_y, scene_z, cur_distance;
 
-	for (int count = 0 ; count < scene_size / 1024; count++){
-		shared_scene_xyzs[3*tx] = scene_xyzs_dev[(count*1024+tx)*3];
-		shared_scene_xyzs[3*tx+1] = scene_xyzs_dev[(count*1024+tx)*3+1];
-		shared_scene_xyzs[3*tx+2] = scene_xyzs_dev[(count*1024+tx)*3+2];
+	for (int count = 0 ; count < scene_size / shared_xyzs_size; count++){
+		for (int e = 0; e < Element_Per_Thread; e++){
+			shared_scene_xyzs[3*(tx+e)] = scene_xyzs_dev[(count*shared_xyzs_size+tx+e)*3];
+			shared_scene_xyzs[3*(tx+e)+1] = scene_xyzs_dev[(count*shared_xyzs_size+tx+e)*3+1];
+			shared_scene_xyzs[3*(tx+e)+2] = scene_xyzs_dev[(count*shared_xyzs_size+tx+e)*3+2];
+		}
+
 		__syncthreads();
 		float cur_min_distances = min_distances_dev[index];
 		int cur_min_index = min_neibor_idxs_dev[index];
-		for (int i = 0; i < 1024; i++){
+		for (int i = 0; i < shared_xyzs_size; i++){
 			scene_x = shared_scene_xyzs[i*3];
 			scene_y = shared_scene_xyzs[i*3+1];
 			scene_z = shared_scene_xyzs[i*3+2];
 			cur_distance = (target_x-scene_x)*(target_x-scene_x)+(target_y-scene_y)*(target_y-scene_y)+(target_z-scene_z)*(target_z-scene_z);
 			if (cur_distance < cur_min_distances){
 				cur_min_distances = cur_distance;
-				cur_min_index = count*1024+i;
+				cur_min_index = count*shared_xyzs_size+i;
 			}
 		}
 		min_distances_dev[index] = cur_min_distances;
@@ -360,11 +364,11 @@ int main()
 	TIMING_END("Prepare data for cuda done...")
 
 
-	dim3 block_size(THREAD_PER_BLOCK);
-	dim3 grid_size(target_size/THREAD_PER_BLOCK);
+	dim3 block_size(512);
+	dim3 grid_size(target_size/512);
 	/* apply kernel function */ 
 	TIMING_BEGIN("Running kernel function ...")
-	findNearestNeibor<<<grid_size, block_size>>>(target_xyzs_dev, scene_xyzs_dev, scene_size, min_distances_dev, min_neibor_idxs_dev);
+	findNearestNeibor2<<<grid_size, block_size>>>(target_xyzs_dev, scene_xyzs_dev, scene_size, min_distances_dev, min_neibor_idxs_dev);
 	cudaDeviceSynchronize();
 	TIMING_END("Kernel function done...")
 
