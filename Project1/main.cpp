@@ -220,7 +220,6 @@ public:
 
 
 	void load(char* fname) {
-		printf("here\n");
 		SceneData::load(fname, -1, false);
 		resetNearest();
 	}
@@ -287,48 +286,50 @@ int main()
 	TIMING_BEGIN("Start loading...")
 	target.load("all.bmp");
 	scene[0].load("0-55.bmp", 0);
-	printf("size2: %d\n",gHashTab.size());
+	// printf("size2: %d\n",gHashTab.size());
 	TIMING_END("Loading done...")
 
-	// TIMING_BEGIN("Start rescanning...")
-	// // 	target.update();
-	// TIMING_END("Rescaning done...")
 
 	float *target_xyzs = target.xyzs();
 	float *scene_xyzs = scene[0].xyzs();
-
 	size_t target_size = target.width() * target.height();
 	size_t scene_size = scene[0].width() * scene[0].height();
-	printf("target_size: %d, scene_size: %d\n", target_size, scene_size);
-
 	int* min_neibor_idxs = (int*)malloc(target_size*sizeof(int));
 	float* min_distances = (float*)malloc(target_size*sizeof(float));
 
 	/* prepare device memory */
 	float *target_xyzs_dev, *scene_xyzs_dev, *min_distances_dev;
 	int* min_neibor_idxs_dev;
+	TIMING_BEGIN("Preparing data for cuda...")
 	cudaMalloc((void**)&target_xyzs_dev, target_size*3*sizeof(float));
 	cudaMalloc((void**)&scene_xyzs_dev, scene_size*3*sizeof(float));
 	cudaMalloc((void**)&min_distances_dev, target_size*sizeof(float));
 	cudaMalloc((void**)&min_neibor_idxs_dev, target_size*sizeof(int));
 	cudaMemcpy(target_xyzs_dev, target_xyzs, target_size*3*sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(scene_xyzs_dev, scene_xyzs, scene_size*3*sizeof(float), cudaMemcpyHostToDevice);
+	TIMING_END("Prepare data for cuda done...")
+
 
 	dim3 block_size(THREAD_PER_BLOCK);
-	dim3 grid_size(target_size/THREAD_PER_BLOCK);
+	dim3 grid_size(target_size/THREAD_PER_BLOCK/8);
 	/* apply kernel function */ 
-	printf("ready to apply kernel\n");
+	TIMING_BEGIN("Running kernel function ...")
 	findNearestNeibor<<<grid_size, block_size>>>(target_xyzs_dev, scene_xyzs_dev, scene_size, min_distances_dev, min_neibor_idxs_dev);
-	printf("after kernel function\n");
+	cudaDeviceSynchronize();
+	TIMING_END("Kernel function done...")
 
+
+	TIMING_BEGIN("Getting data from GPU...")
 	cudaMemcpy(min_distances, min_distances_dev, target_size*sizeof(float), cudaMemcpyDeviceToHost);
 	cudaMemcpy(min_neibor_idxs, min_neibor_idxs_dev, target_size*sizeof(int), cudaMemcpyDeviceToHost);
+	TIMING_END("Get data from GPU done...")
+
 
 	float *new_target_rgbs = (float *)malloc(target_size*3*sizeof(float));
-	setRedBackground(new_target_rgbs, target_size);
 	float *scene_rgbs = scene[0].rgbs();
 	float bound = 1.5*1.5;
-	printf("after copy back\n");
+	TIMING_BEGIN("Setting new rgbs ...")
+	setRedBackground(new_target_rgbs, target_size);
 	for (int i=0; i<target_size; i++){
 		if(min_distances[i]<bound){
 			int min_neibor_idx = min_neibor_idxs[i];
@@ -340,20 +341,23 @@ int main()
 			}
 		}
 	}
-	printf("here\n");
+	TIMING_END("Set new rgbs done...")
 
 	cudaFree(target_xyzs_dev);
 	cudaFree(scene_xyzs_dev);
 	cudaFree(min_distances_dev);
 	cudaFree(min_neibor_idxs);
 
-	printf("try to save\n");
+	// printf("try to save\n");
+	TIMING_BEGIN("Writing output file ...")
 	target.setRgbsNew(new_target_rgbs);
 	target.save("output.bmp");
-	printf("after save\n");
+	TIMING_END("Write output file done ...")
+	// printf("after save\n");
 	free(min_neibor_idxs);
 	free(min_distances);
 	free(new_target_rgbs);
-	printf("last line\n");
+	// printf("last line\n");
+
 	return 0;
 }
