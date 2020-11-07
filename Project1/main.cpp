@@ -241,6 +241,13 @@ public:
 // 	}
 // }
 
+void setRedBackground(float *new_target_rgbs, int size){
+	for (int i=0; i<size; i++){
+		new_target_rgbs[i*3] = 1;
+		new_target_rgbs[i*3+1] = 0;
+		new_target_rgbs[i*3+2] = 0;
+	}
+}
 
 __global__ void findNearestNeibor(float *target_xyzs_dev, float *scene_xyzs_dev, int scene_size, 
 								  float *min_distances_dev, int *min_neibor_idxs_dev)
@@ -318,6 +325,7 @@ int main()
 	cudaMemcpy(min_neibor_idxs, min_neibor_idxs_dev, target_size*sizeof(int), cudaMemcpyDeviceToHost);
 
 	float *new_target_rgbs = (float *)malloc(target_size*3*sizeof(float));
+	setRedBackground(new_target_rgbs, target_size);
 	float *scene_rgbs = scene[0].rgbs();
 	float bound = 1.5*1.5;
 	printf("after copy back\n");
@@ -325,9 +333,11 @@ int main()
 		if(min_distances[i]<bound){
 			int min_neibor_idx = min_neibor_idxs[i];
 			// printf("i: %d, idx: %d\n", i, min_neibor_idx);
-			new_target_rgbs[i*3] = scene_rgbs[min_neibor_idx*3];
-			new_target_rgbs[i*3+1] = scene_rgbs[min_neibor_idx*3+1];
-			new_target_rgbs[i*3+2] = scene_rgbs[min_neibor_idx*3+2];
+			if(min_neibor_idx>0){
+				new_target_rgbs[i*3] = scene_rgbs[min_neibor_idx*3];
+				new_target_rgbs[i*3+1] = scene_rgbs[min_neibor_idx*3+1];
+				new_target_rgbs[i*3+2] = scene_rgbs[min_neibor_idx*3+2];
+			}
 		}
 	}
 	printf("here\n");
