@@ -251,6 +251,7 @@ public:
 	float x;
 	float y;
 	float z; 
+	int idx;
 
 	bool operator<(const Location& b) {
 		if(this->x<b.x){
@@ -275,13 +276,17 @@ public:
  };
 
 
-size_t compressPoints(float *target_xyzs, float *reduced_target_xyzs, size_t target_size){
+
+float *reduced_target_xyzs;
+int *indexs;
+size_t compressPoints(float *target_xyzs, size_t target_size){
 	vector<Location> Locations;
 	Location cur_loca;
 	for (int i=0; i<target_size; i++){
 		cur_loca.x =  target_xyzs[3*i];
 		cur_loca.y =  target_xyzs[3*i+1];
 		cur_loca.z =  target_xyzs[3*i+2];
+		cur_loca.idx = i;
 		Locations.push_back(cur_loca);
 	}
 
@@ -291,11 +296,14 @@ size_t compressPoints(float *target_xyzs, float *reduced_target_xyzs, size_t tar
 	// printf("reduced size: %d\n", reduced_target_size);
 
 	reduced_target_xyzs = new float[reduced_target_size*3];
+	indexs = new int[reduced_target_size];
 	for (int i=0; i<reduced_target_size; i++){
 		reduced_target_xyzs[3*i] = Locations[i].x;
 		reduced_target_xyzs[3*i+1] = Locations[i].y;
 		reduced_target_xyzs[3*i+2] = Locations[i].z;
+		indexs[i] = Locations[i].idx;
 	}
+	printf("idx:%d, %d, %d\n",indexs[0], indexs[1], indexs[2]);
 	return reduced_target_size;
 }
 
@@ -395,36 +403,44 @@ int main()
 	// printf("size2: %d\n",gHashTab.size());
 	TIMING_END("Loading done...")
 
-
+	bool compressData = false;
 	float *target_xyzs = target.xyzs();
 	size_t target_size = target.width() * target.height();
 
-	float *reduced_target_xyzs;
-	size_t reduced_target_size = compressPoints(target_xyzs, reduced_target_xyzs, target_size);
-	// printf("reduced size: %d, target_size: %d\n", reduced_target_size, target_size);
+	size_t calculated_target_size, reduced_target_size;
+	if (compressData){
+		reduced_target_size = compressPoints(target_xyzs, target_size);
+		printf("reduced size: %d, target_size: %d\n", reduced_target_size, target_size);
+		calculated_target_size = reduced_target_size;
+	}else{
+		calculated_target_size = target_size;
+	}
 
-	target_size = reduced_target_size;
 
 	float *scene_xyzs = scene[0].xyzs();
 	size_t scene_size = scene[0].width() * scene[0].height();
-	int* min_neibor_idxs = (int*)malloc(target_size*sizeof(int));
-	float* min_distances = (float*)malloc(target_size*sizeof(float));
+	int* min_neibor_idxs = (int*)malloc(calculated_target_size*sizeof(int));
+	float* min_distances = (float*)malloc(calculated_target_size*sizeof(float));
 
 	/* prepare device memory */
 	float *target_xyzs_dev, *scene_xyzs_dev, *min_distances_dev;
 	int* min_neibor_idxs_dev;
 	TIMING_BEGIN("Preparing data for cuda...")
-	cudaMalloc((void**)&target_xyzs_dev, target_size*3*sizeof(float));
+	cudaMalloc((void**)&target_xyzs_dev, calculated_target_size*3*sizeof(float));
 	cudaMalloc((void**)&scene_xyzs_dev, scene_size*3*sizeof(float));
-	cudaMalloc((void**)&min_distances_dev, target_size*sizeof(float));
-	cudaMalloc((void**)&min_neibor_idxs_dev, target_size*sizeof(int));
-	cudaMemcpy(target_xyzs_dev, reduced_target_xyzs, target_size*3*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMalloc((void**)&min_distances_dev, calculated_target_size*sizeof(float));
+	cudaMalloc((void**)&min_neibor_idxs_dev, calculated_target_size*sizeof(int));
+	if(compressData){
+		cudaMemcpy(target_xyzs_dev, reduced_target_xyzs, calculated_target_size*3*sizeof(float), cudaMemcpyHostToDevice);
+	}else{
+		cudaMemcpy(target_xyzs_dev, target_xyzs, calculated_target_size*3*sizeof(float), cudaMemcpyHostToDevice);
+	}
 	cudaMemcpy(scene_xyzs_dev, scene_xyzs, scene_size*3*sizeof(float), cudaMemcpyHostToDevice);
 	TIMING_END("Prepare data for cuda done...")
 
 
 	dim3 block_size(512);
-	dim3 grid_size(target_size/512);
+	dim3 grid_size(calculated_target_size/512);
 	/* apply kernel function */ 
 	TIMING_BEGIN("Running kernel function ...")
 	findNearestNeibor2<<<grid_size, block_size>>>(target_xyzs_dev, scene_xyzs_dev, scene_size, min_distances_dev, min_neibor_idxs_dev);
@@ -433,8 +449,8 @@ int main()
 
 
 	TIMING_BEGIN("Getting data from GPU...")
-	cudaMemcpy(min_distances, min_distances_dev, target_size*sizeof(float), cudaMemcpyDeviceToHost);
-	cudaMemcpy(min_neibor_idxs, min_neibor_idxs_dev, target_size*sizeof(int), cudaMemcpyDeviceToHost);
+	cudaMemcpy(min_distances, min_distances_dev, calculated_target_size*sizeof(float), cudaMemcpyDeviceToHost);
+	cudaMemcpy(min_neibor_idxs, min_neibor_idxs_dev, calculated_target_size*sizeof(int), cudaMemcpyDeviceToHost);
 	TIMING_END("Get data from GPU done...")
 
 
@@ -443,17 +459,32 @@ int main()
 	float bound = 1.5*1.5;
 	TIMING_BEGIN("Setting new rgbs ...")
 	setRedBackground(new_target_rgbs, target_size);
-	for (int i=0; i<target_size; i++){
-		if(min_distances[i]<bound){
-			int min_neibor_idx = min_neibor_idxs[i];
-			// printf("i: %d, idx: %d\n", i, min_neibor_idx);
-			if(min_neibor_idx>0){
-				new_target_rgbs[i*3] = scene_rgbs[min_neibor_idx*3];
-				new_target_rgbs[i*3+1] = scene_rgbs[min_neibor_idx*3+1];
-				new_target_rgbs[i*3+2] = scene_rgbs[min_neibor_idx*3+2];
+	if(compressData){
+		for (int i=0; i<calculated_target_size; i++){
+			if(min_distances[i]<bound){
+				int min_neibor_idx = min_neibor_idxs[i];
+				// printf("i: %d, idx: %d\n", i, min_neibor_idx);
+				if(min_neibor_idx>0){
+					new_target_rgbs[indexs[i]*3] = scene_rgbs[min_neibor_idx*3];
+					new_target_rgbs[indexs[i]*3+1] = scene_rgbs[min_neibor_idx*3+1];
+					new_target_rgbs[indexs[i]*3+2] = scene_rgbs[min_neibor_idx*3+2];
+				}
+			}
+		}
+	}else{
+		for (int i=0; i<calculated_target_size; i++){
+			if(min_distances[i]<bound){
+				int min_neibor_idx = min_neibor_idxs[i];
+				// printf("i: %d, idx: %d\n", i, min_neibor_idx);
+				if(min_neibor_idx>0){
+					new_target_rgbs[i*3] = scene_rgbs[min_neibor_idx*3];
+					new_target_rgbs[i*3+1] = scene_rgbs[min_neibor_idx*3+1];
+					new_target_rgbs[i*3+2] = scene_rgbs[min_neibor_idx*3+2];
+				}
 			}
 		}
 	}
+
 	TIMING_END("Set new rgbs done...")
 
 	cudaFree(target_xyzs_dev);
@@ -464,13 +495,16 @@ int main()
 	// printf("try to save\n");
 	TIMING_BEGIN("Writing output file ...")
 	target.setRgbsNew(new_target_rgbs);
-	target.save("output_origin.bmp");
+	target.save("origin.bmp");
 	TIMING_END("Write output file done ...")
 	// printf("after save\n");
 	free(min_neibor_idxs);
 	free(min_distances);
 	free(new_target_rgbs);
-	delete[] reduced_target_xyzs;
+	if(compressData){
+		delete[] reduced_target_xyzs;
+		delete[] indexs;
+	}
 	// printf("last line\n");
 
 	return 0;
