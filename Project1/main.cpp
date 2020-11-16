@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <vector>
 #include <iostream>
+#include <algorithm>
 #include "cuda_function.h"
 
 #include "vec3f.h"
@@ -21,6 +22,8 @@ using namespace std;
 std::vector<xyz2rgb> gHashTab;
 
 #define THREAD_PER_BLOCK 1024
+
+
 
 class SceneData {
 protected:
@@ -232,13 +235,6 @@ public:
 };
 
 
-// void loadSceneXyzs(float *scene_xyzs, int size){
-// 	for (int i=0; i<size; i++){
-// 		scene_xyzs[i*3] = gHashTab[i].xyz().x;
-// 		scene_xyzs[i*3+1] = gHashTab[i].xyz().y;
-// 		scene_xyzs[i*3+2] = gHashTab[i].xyz().z;
-// 	}
-// }
 
 void setRedBackground(float *new_target_rgbs, int size){
 	for (int i=0; i<size; i++){
@@ -247,6 +243,62 @@ void setRedBackground(float *new_target_rgbs, int size){
 		new_target_rgbs[i*3+2] = 0;
 	}
 }
+
+
+
+class Location{
+public:
+	float x;
+	float y;
+	float z; 
+
+	bool operator<(const Location& b) {
+		if(this->x<b.x){
+			return true;
+		}else if(this->x == b.x){
+			if(this->y < b.y){
+				return true;
+			}else if(this->y == b.y){
+				return z < b.z;
+			}else{
+				return false;
+			}
+		}else{
+			return false;
+		}
+	}
+
+	bool operator==(const Location& b) {
+		return this->x == b.x && this->y == b.y && this->z == b.z; 
+	}
+
+ };
+
+
+size_t compressPoints(float *target_xyzs, float *reduced_target_xyzs, size_t target_size){
+	vector<Location> Locations;
+	Location cur_loca;
+	for (int i=0; i<target_size; i++){
+		cur_loca.x =  target_xyzs[3*i];
+		cur_loca.y =  target_xyzs[3*i+1];
+		cur_loca.z =  target_xyzs[3*i+2];
+		Locations.push_back(cur_loca);
+	}
+
+	sort(Locations.begin(),Locations.end());
+    Locations.erase(unique(Locations.begin(), Locations.end()), Locations.end());
+	size_t reduced_target_size = Locations.size();
+	// printf("reduced size: %d\n", reduced_target_size);
+
+	reduced_target_xyzs = new float[reduced_target_size*3];
+	for (int i=0; i<reduced_target_size; i++){
+		reduced_target_xyzs[3*i] = Locations[i].x;
+		reduced_target_xyzs[3*i+1] = Locations[i].y;
+		reduced_target_xyzs[3*i+2] = Locations[i].z;
+	}
+	return reduced_target_size;
+}
+
 
 __global__ void findNearestNeibor(float *target_xyzs_dev, float *scene_xyzs_dev, int scene_size, 
 								  float *min_distances_dev, int *min_neibor_idxs_dev)
@@ -345,8 +397,15 @@ int main()
 
 
 	float *target_xyzs = target.xyzs();
-	float *scene_xyzs = scene[0].xyzs();
 	size_t target_size = target.width() * target.height();
+
+	float *reduced_target_xyzs;
+	size_t reduced_target_size = compressPoints(target_xyzs, reduced_target_xyzs, target_size);
+	// printf("reduced size: %d, target_size: %d\n", reduced_target_size, target_size);
+
+	target_size = reduced_target_size;
+
+	float *scene_xyzs = scene[0].xyzs();
 	size_t scene_size = scene[0].width() * scene[0].height();
 	int* min_neibor_idxs = (int*)malloc(target_size*sizeof(int));
 	float* min_distances = (float*)malloc(target_size*sizeof(float));
@@ -359,7 +418,7 @@ int main()
 	cudaMalloc((void**)&scene_xyzs_dev, scene_size*3*sizeof(float));
 	cudaMalloc((void**)&min_distances_dev, target_size*sizeof(float));
 	cudaMalloc((void**)&min_neibor_idxs_dev, target_size*sizeof(int));
-	cudaMemcpy(target_xyzs_dev, target_xyzs, target_size*3*sizeof(float), cudaMemcpyHostToDevice);
+	cudaMemcpy(target_xyzs_dev, reduced_target_xyzs, target_size*3*sizeof(float), cudaMemcpyHostToDevice);
 	cudaMemcpy(scene_xyzs_dev, scene_xyzs, scene_size*3*sizeof(float), cudaMemcpyHostToDevice);
 	TIMING_END("Prepare data for cuda done...")
 
@@ -405,12 +464,13 @@ int main()
 	// printf("try to save\n");
 	TIMING_BEGIN("Writing output file ...")
 	target.setRgbsNew(new_target_rgbs);
-	target.save("output2.bmp");
+	target.save("output_origin.bmp");
 	TIMING_END("Write output file done ...")
 	// printf("after save\n");
 	free(min_neibor_idxs);
 	free(min_distances);
 	free(new_target_rgbs);
+	delete[] reduced_target_xyzs;
 	// printf("last line\n");
 
 	return 0;
