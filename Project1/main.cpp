@@ -273,14 +273,18 @@ public:
 		return this->x == b.x && this->y == b.y && this->z == b.z; 
 	}
 
+	bool operator!=(const Location& b) {
+		return this->x != b.x || this->y != b.y || this->z != b.z; 
+	}
+
  };
 
 
 
 float *reduced_target_xyzs;
-int *indexs;
+// int *indexs;
+vector<Location> Locations;
 size_t compressPoints(float *target_xyzs, size_t target_size){
-	vector<Location> Locations;
 	Location cur_loca;
 	for (int i=0; i<target_size; i++){
 		cur_loca.x =  target_xyzs[3*i];
@@ -290,20 +294,39 @@ size_t compressPoints(float *target_xyzs, size_t target_size){
 		Locations.push_back(cur_loca);
 	}
 
+	// indexs = new int[target_size];
 	sort(Locations.begin(),Locations.end());
-    Locations.erase(unique(Locations.begin(), Locations.end()), Locations.end());
-	size_t reduced_target_size = Locations.size();
+	// printf("vector size: %d\n", Locations.size());
+	// indexs[0] = Locations[0].idx;
+	// for (int i=1; i<target_size; i++){
+	// 	if(Locations[i] == Locations[i-1]){
+	// 		indexs[i] = indexs[i-1];
+	// 	}else{
+	// 		indexs[i] = Locations[i].idx;
+	// 	}
+
+	// }
+	// for (int i=0; i<100; i++){
+	// 	printf("%d ", indexs[i]);
+	// }
+	vector<Location> reduced_Locations(Locations);
+    reduced_Locations.erase(unique(reduced_Locations.begin(), reduced_Locations.end()), reduced_Locations.end());
+	// printf("Locations: ");
+	// for (int i=0; i<10; i++){
+	// 	printf("%d ", Locations[i].idx);
+	// }
+	size_t reduced_target_size = reduced_Locations.size();
 	// printf("reduced size: %d\n", reduced_target_size);
 
 	reduced_target_xyzs = new float[reduced_target_size*3];
-	indexs = new int[reduced_target_size];
+
 	for (int i=0; i<reduced_target_size; i++){
-		reduced_target_xyzs[3*i] = Locations[i].x;
-		reduced_target_xyzs[3*i+1] = Locations[i].y;
-		reduced_target_xyzs[3*i+2] = Locations[i].z;
-		indexs[i] = Locations[i].idx;
+		reduced_target_xyzs[3*i] = reduced_Locations[i].x;
+		reduced_target_xyzs[3*i+1] = reduced_Locations[i].y;
+		reduced_target_xyzs[3*i+2] = reduced_Locations[i].z;
+		// indexs[i] = Locations[i].idx;
 	}
-	printf("idx:%d, %d, %d\n",indexs[0], indexs[1], indexs[2]);
+	// printf("idx:%d, %d, %d\n",indexs[0], indexs[1], indexs[2]);
 	return reduced_target_size;
 }
 
@@ -403,7 +426,7 @@ int main()
 	// printf("size2: %d\n",gHashTab.size());
 	TIMING_END("Loading done...")
 
-	bool compressData = false;
+	bool compressData = true;
 	float *target_xyzs = target.xyzs();
 	size_t target_size = target.width() * target.height();
 
@@ -460,19 +483,24 @@ int main()
 	TIMING_BEGIN("Setting new rgbs ...")
 	setRedBackground(new_target_rgbs, target_size);
 	if(compressData){
-		for (int i=0; i<calculated_target_size; i++){
-			if(min_distances[i]<bound){
-				int min_neibor_idx = min_neibor_idxs[i];
-				// printf("i: %d, idx: %d\n", i, min_neibor_idx);
-				if(min_neibor_idx>0){
-					new_target_rgbs[indexs[i]*3] = scene_rgbs[min_neibor_idx*3];
-					new_target_rgbs[indexs[i]*3+1] = scene_rgbs[min_neibor_idx*3+1];
-					new_target_rgbs[indexs[i]*3+2] = scene_rgbs[min_neibor_idx*3+2];
-				}
+		int count = 0;
+		if(min_distances[count] < bound){
+			new_target_rgbs[Locations[0].idx*3] = scene_rgbs[min_neibor_idxs[count]*3];
+			new_target_rgbs[Locations[0].idx*3+1] = scene_rgbs[min_neibor_idxs[count]*3+1];
+			new_target_rgbs[Locations[0].idx*3+2] = scene_rgbs[min_neibor_idxs[count]*3+2];
+		}
+		for (int i=1; i<target_size; i++){
+			if(Locations[i] != Locations[i-1]){
+				count++;
+			}
+			if(min_distances[count] < bound){
+				new_target_rgbs[Locations[i].idx*3] = scene_rgbs[min_neibor_idxs[count]*3];
+				new_target_rgbs[Locations[i].idx*3+1] = scene_rgbs[min_neibor_idxs[count]*3+1];
+				new_target_rgbs[Locations[i].idx*3+2] = scene_rgbs[min_neibor_idxs[count]*3+2];
 			}
 		}
 	}else{
-		for (int i=0; i<calculated_target_size; i++){
+		for (int i=0; i<target_size; i++){
 			if(min_distances[i]<bound){
 				int min_neibor_idx = min_neibor_idxs[i];
 				// printf("i: %d, idx: %d\n", i, min_neibor_idx);
@@ -495,7 +523,7 @@ int main()
 	// printf("try to save\n");
 	TIMING_BEGIN("Writing output file ...")
 	target.setRgbsNew(new_target_rgbs);
-	target.save("origin.bmp");
+	target.save("compress.bmp");
 	TIMING_END("Write output file done ...")
 	// printf("after save\n");
 	free(min_neibor_idxs);
@@ -503,7 +531,7 @@ int main()
 	free(new_target_rgbs);
 	if(compressData){
 		delete[] reduced_target_xyzs;
-		delete[] indexs;
+		// delete[] indexs;
 	}
 	// printf("last line\n");
 
