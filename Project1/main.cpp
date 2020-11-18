@@ -21,7 +21,7 @@ using namespace std;
 
 std::vector<xyz2rgb> gHashTab;
 
-#define THREAD_PER_BLOCK 1024
+// #define THREAD_PER_BLOCK 1024
 
 
 
@@ -282,7 +282,6 @@ public:
 
 
 float *reduced_target_xyzs;
-// int *indexs;
 vector<Location> Locations;
 size_t compressPoints(float *target_xyzs, size_t target_size){
 	Location cur_loca;
@@ -294,29 +293,10 @@ size_t compressPoints(float *target_xyzs, size_t target_size){
 		Locations.push_back(cur_loca);
 	}
 
-	// indexs = new int[target_size];
 	sort(Locations.begin(),Locations.end());
-	// printf("vector size: %d\n", Locations.size());
-	// indexs[0] = Locations[0].idx;
-	// for (int i=1; i<target_size; i++){
-	// 	if(Locations[i] == Locations[i-1]){
-	// 		indexs[i] = indexs[i-1];
-	// 	}else{
-	// 		indexs[i] = Locations[i].idx;
-	// 	}
-
-	// }
-	// for (int i=0; i<100; i++){
-	// 	printf("%d ", indexs[i]);
-	// }
 	vector<Location> reduced_Locations(Locations);
     reduced_Locations.erase(unique(reduced_Locations.begin(), reduced_Locations.end()), reduced_Locations.end());
-	// printf("Locations: ");
-	// for (int i=0; i<10; i++){
-	// 	printf("%d ", Locations[i].idx);
-	// }
 	size_t reduced_target_size = reduced_Locations.size();
-	// printf("reduced size: %d\n", reduced_target_size);
 
 	reduced_target_xyzs = new float[reduced_target_size*3];
 
@@ -324,9 +304,7 @@ size_t compressPoints(float *target_xyzs, size_t target_size){
 		reduced_target_xyzs[3*i] = reduced_Locations[i].x;
 		reduced_target_xyzs[3*i+1] = reduced_Locations[i].y;
 		reduced_target_xyzs[3*i+2] = reduced_Locations[i].z;
-		// indexs[i] = Locations[i].idx;
 	}
-	// printf("idx:%d, %d, %d\n",indexs[0], indexs[1], indexs[2]);
 	return reduced_target_size;
 }
 
@@ -366,7 +344,7 @@ __global__ void findNearestNeibor2(float *target_xyzs_dev, float *scene_xyzs_dev
 	int bx = blockIdx.x;
 	int tx = threadIdx.x;
 	int index = bx * blockDim.x + tx;
-	int Element_Per_Thread = 2;
+	int Element_Per_Thread = 4;
 	int shared_xyzs_size = 512*Element_Per_Thread;
 	__shared__ float shared_scene_xyzs[4*512*3];
 	// int loop_total = scene_size / 512;
@@ -426,7 +404,7 @@ int main()
 	// printf("size2: %d\n",gHashTab.size());
 	TIMING_END("Loading done...")
 
-	bool compressData = true;
+	bool compressData = false;
 	float *target_xyzs = target.xyzs();
 	size_t target_size = target.width() * target.height();
 
@@ -466,7 +444,7 @@ int main()
 	dim3 grid_size(calculated_target_size/512);
 	/* apply kernel function */ 
 	TIMING_BEGIN("Running kernel function ...")
-	findNearestNeibor2<<<grid_size, block_size>>>(target_xyzs_dev, scene_xyzs_dev, scene_size, min_distances_dev, min_neibor_idxs_dev);
+	findNearestNeibor<<<grid_size, block_size>>>(target_xyzs_dev, scene_xyzs_dev, scene_size, min_distances_dev, min_neibor_idxs_dev);
 	cudaDeviceSynchronize();
 	TIMING_END("Kernel function done...")
 
@@ -523,7 +501,7 @@ int main()
 	// printf("try to save\n");
 	TIMING_BEGIN("Writing output file ...")
 	target.setRgbsNew(new_target_rgbs);
-	target.save("compress.bmp");
+	target.save("share.bmp");
 	TIMING_END("Write output file done ...")
 	// printf("after save\n");
 	free(min_neibor_idxs);
